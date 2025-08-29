@@ -15,13 +15,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: [
-      "https://chat-app-one-gamma-66.vercel.app",
-      "https://chat-eewfev13a-rezzs-projects.vercel.app",
-      "https://chat-app-rezzs-projects.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:3000"
-    ],
+    origin: "*", // Temporarily allow all origins for testing
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -39,7 +33,7 @@ if (process.env.ENABLE_PERFORMANCE_MONITORING === 'true') {
 
 // Middleware
 app.use(cors({
-  origin: true, // Allow all origins temporarily
+  origin: true, // Allow all origins temporarily for testing
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]

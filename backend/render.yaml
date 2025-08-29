@@ -14,7 +14,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGIN
-        value: https://chatapp-frontend.vercel.app
+        value: https://chat-app-one-gamma-66.vercel.app,https://chat-eewfev13a-rezzs-projects.vercel.app,https://chat-app-git-main-rezzs-projects.vercel.app
     healthCheckPath: /health
     disk:
       name: uploads
