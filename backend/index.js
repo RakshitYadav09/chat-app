@@ -148,8 +148,12 @@ app.get('/', (req, res) => {
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   const connectionStart = Date.now();
-  performanceMonitor.recordConnection('connect');
-  console.log(`User connected: ${socket.id} (Active: ${performanceMonitor.metrics.activeConnections})`);
+  if (performanceMonitor) {
+    performanceMonitor.recordConnection('connect');
+    console.log(`User connected: ${socket.id} (Active: ${performanceMonitor.metrics.activeConnections})`);
+  } else {
+    console.log(`User connected: ${socket.id}`);
+  }
 
   // Join user to their room
   socket.on('join', (userId) => {
@@ -176,7 +180,9 @@ io.on('connection', (socket) => {
         console.log(`✅ Realtime embedding generated using ${embeddingService.getActiveService()} service (${embeddingTime}ms)`);
       } catch (embeddingError) {
         console.error('❌ Failed to generate embedding for realtime message:', embeddingError);
-        performanceMonitor.recordError('embedding');
+        if (performanceMonitor) {
+          performanceMonitor.recordError('embedding');
+        }
         // Continue without embedding - message still gets sent
       }
 
@@ -192,14 +198,18 @@ io.on('connection', (socket) => {
 
       await newMessage.save();
       const dbTime = Date.now() - dbStart;
-      performanceMonitor.recordDbOperation('message_save', dbTime);
+      if (performanceMonitor) {
+        performanceMonitor.recordDbOperation('message_save', dbTime);
+      }
       
       await newMessage.populate('senderId', 'name email');
       await newMessage.populate('receiverId', 'name email');
 
       // Record message processing metrics
       const totalTime = Date.now() - messageStart;
-      performanceMonitor.recordMessage(totalTime, !!embedding);
+      if (performanceMonitor) {
+        performanceMonitor.recordMessage(totalTime, !!embedding);
+      }
       
       // REALTIME BROADCAST: Emit to both sender and receiver with embedding status
       const messageWithMeta = {
@@ -218,15 +228,21 @@ io.on('connection', (socket) => {
       console.log(`💬 Realtime message sent from ${senderId} to ${receiverId} (embedding: ${!!embedding}, ${totalTime}ms total)`);
     } catch (error) {
       console.error('❌ Error handling socket message:', error);
-      performanceMonitor.recordError('socket');
+      if (performanceMonitor) {
+        performanceMonitor.recordError('socket');
+      }
       socket.emit('error', { message: 'Failed to send message' });
     }
   });
 
   socket.on('disconnect', () => {
     const connectionTime = Date.now() - connectionStart;
-    performanceMonitor.recordConnection('disconnect');
-    console.log(`User disconnected: ${socket.id} (Active: ${performanceMonitor.metrics.activeConnections}, Duration: ${Math.round(connectionTime/1000)}s)`);
+    if (performanceMonitor) {
+      performanceMonitor.recordConnection('disconnect');
+      console.log(`User disconnected: ${socket.id} (Active: ${performanceMonitor.metrics.activeConnections}, Duration: ${Math.round(connectionTime/1000)}s)`);
+    } else {
+      console.log(`User disconnected: ${socket.id} (Duration: ${Math.round(connectionTime/1000)}s)`);
+    }
   });
 });
 
@@ -250,16 +266,21 @@ connectDB().then(() => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Health check available at http://localhost:${PORT}/health`);
     console.log(`Performance metrics available at http://localhost:${PORT}/metrics`);
-    console.log('📊 Performance monitoring active - metrics logged every 30s');
     
-    // Log initial system state
-    setTimeout(() => {
-      console.log('\n🚀 INITIAL SYSTEM STATE:');
-      const metrics = performanceMonitor.getSimpleMetrics();
-      console.log(`Memory Usage: ${metrics.resources.memoryMB} MB`);
-      console.log(`Active Connections: ${metrics.connections.active}`);
-      console.log('System ready for monitoring!\n');
-    }, 2000);
+    if (performanceMonitor) {
+      console.log('📊 Performance monitoring active - metrics logged every 30s');
+      
+      // Log initial system state
+      setTimeout(() => {
+        console.log('\n🚀 INITIAL SYSTEM STATE:');
+        const metrics = performanceMonitor.getSimpleMetrics();
+        console.log(`Memory Usage: ${metrics.resources.memoryMB} MB`);
+        console.log(`Active Connections: ${metrics.connections.active}`);
+        console.log('System ready for monitoring!\n');
+      }, 2000);
+    } else {
+      console.log('📊 Performance monitoring disabled - using lightweight mode');
+    }
   });
 });
 
