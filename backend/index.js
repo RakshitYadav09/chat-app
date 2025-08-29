@@ -15,8 +15,22 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
-    methods: ["GET", "POST"]
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      const allowedOrigins = process.env.CORS_ORIGIN ? 
+        process.env.CORS_ORIGIN.split(',').map(url => url.trim()) : 
+        ["http://localhost:5173"];
+      
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        return callback(new Error('Not allowed by CORS'));
+      }
+    },
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
@@ -25,7 +39,23 @@ const performanceMonitor = new PerformanceMonitor();
 console.log('📊 Performance monitoring initialized');
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = process.env.CORS_ORIGIN ? 
+      process.env.CORS_ORIGIN.split(',').map(url => url.trim()) : 
+      ["http://localhost:5173"];
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 app.use(express.json());
 
 // Serve static files (dashboard)
@@ -81,6 +111,25 @@ app.get('/health', (req, res) => {
     activeConnections: metrics.connections.active,
     messagesPerSecond: metrics.messages.perSecond,
     memoryUsageMB: metrics.resources.memoryMB
+  });
+});
+
+// Root endpoint - API information
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Chat App Backend API',
+    version: '1.0.0',
+    status: 'Running',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/health',
+      metrics: '/metrics',
+      dashboard: '/dashboard',
+      users: '/users',
+      messages: '/messages'
+    },
+    websocket: 'Available on same port',
+    docs: 'API endpoints available for chat functionality'
   });
 });
 
