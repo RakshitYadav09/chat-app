@@ -1,52 +1,45 @@
 const axios = require('axios');
-const localEmbeddings = require('./localEmbeddings');
 
 class EmbeddingService {
   constructor() {
-    this.openaiApiKey = process.env.OPENAI_API_KEY;
-    this.hfApiKey = process.env.HUGGINGFACE_API_KEY;
-    this.useOpenAI = !!this.openaiApiKey;
+    this.claudeApiKey = process.env.CLAUDE_API_KEY;
+    this.useClaude = !!this.claudeApiKey;
     
     // Debug token loading
     console.log('🔍 Token debugging:');
-    console.log(`OpenAI token: ${this.openaiApiKey ? this.openaiApiKey.substring(0, 8) + '...' : 'Not found'}`);
-    console.log(`HuggingFace token: ${this.hfApiKey ? this.hfApiKey.substring(0, 8) + '...' : 'Not found'}`);
+    console.log(`Claude token: ${this.claudeApiKey ? this.claudeApiKey.substring(0, 8) + '...' : 'Not found'}`);
     
-    // Priority order: OpenAI > Local Transformers > Legacy local fallback
-    if (this.useOpenAI) {
-      console.log('✅ Using OpenAI text-embedding-3-small for embeddings');
+    // Priority order: Claude API > Legacy local fallback
+    if (this.useClaude) {
+      console.log('✅ Using Claude API for embeddings');
     } else {
-      console.log('✅ Using local transformer model (all-MiniLM-L6-v2) for embeddings');
+      console.log('✅ Using legacy local embedding generation');
     }
   }
 
   /**
-   * Main embedding generation function with local transformers
-   * Priority: OpenAI → Local Transformers → Legacy local fallback
+   * Main embedding generation function with Claude API
+   * Priority: Claude API → Legacy local fallback
    * @param {string} text - Text to embed
    * @returns {Promise<number[]>} - Embedding vector
    */
   async generateEmbedding(text) {
     try {
-      // PRIORITY 1: Try OpenAI if available (paid, highest quality)
-      if (this.useOpenAI) {
-        return await this.generateOpenAIEmbedding(text);
+      // PRIORITY 1: Try Claude API if available (high quality, API-based)
+      if (this.useClaude) {
+        return await this.generateClaudeEmbedding(text);
       }
       
-      // PRIORITY 2: Use local transformer model (high quality, completely free)
-      try {
-        return await localEmbeddings.embedText(text);
-      } catch (localError) {
-        console.error('❌ Local transformer failed:', localError.message);
-        throw localError;
-      }
+      // PRIORITY 2: Use legacy local implementation (no external dependencies)
+      console.log('🔄 Using legacy local embedding generation');
+      return await this.generateLegacyLocalEmbedding(text);
       
     } catch (error) {
       console.error('Primary embedding generation failed, trying fallback:', error.message);
       
-      // Ultimate fallback: Try legacy local implementation if transformer fails
-      console.log('🔄 Falling back to legacy local embedding generation');
+      // Ultimate fallback: Legacy local implementation
       try {
+        console.log('🔄 Falling back to legacy local embedding generation');
         return await this.generateLegacyLocalEmbedding(text);
       } catch (fallbackError) {
         console.error('❌ All embedding methods failed:', fallbackError.message);
@@ -58,30 +51,58 @@ class EmbeddingService {
   }
 
   /**
-   * OpenAI embedding generation (paid service)
-   * Returns 1536-dimensional vectors
+   * Claude API embedding generation (high quality, API-based)
+   * Returns embeddings using Claude's understanding
    */
-  async generateOpenAIEmbedding(text) {
+  async generateClaudeEmbedding(text) {
     try {
-      console.log('🚀 Generating OpenAI embedding');
+      console.log('🚀 Generating Claude embedding');
+      
+      // Claude doesn't have a direct embedding API, so we'll use a creative approach
+      // We'll ask Claude to analyze the text and return semantic features
       const response = await axios.post(
-        'https://api.openai.com/v1/embeddings',
+        'https://api.anthropic.com/v1/messages',
         {
-          input: text,
-          model: 'text-embedding-3-small'
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `Analyze this text and extract 20 key semantic features as numbers between -1 and 1. Return only a JSON array of 20 numbers: "${text}"`
+          }]
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'x-api-key': this.claudeApiKey,
+            'anthropic-version': '2023-06-01',
             'Content-Type': 'application/json'
           },
-          timeout: 10000 // 10 second timeout
+          timeout: 15000 // 15 second timeout
         }
       );
 
-      return response.data.data[0].embedding;
+      // Parse the response to extract numbers
+      const content = response.data.content[0].text;
+      const numbers = content.match(/-?\d+\.?\d*/g);
+      
+      if (numbers && numbers.length >= 20) {
+        // Convert to numbers and ensure they're between -1 and 1
+        const embedding = numbers.slice(0, 20).map(n => {
+          const num = parseFloat(n);
+          return Math.max(-1, Math.min(1, num)); // Clamp to [-1, 1]
+        });
+        
+        // Pad to 384 dimensions with zeros for compatibility
+        while (embedding.length < 384) {
+          embedding.push(0);
+        }
+        
+        return embedding.slice(0, 384);
+      } else {
+        throw new Error('Could not extract semantic features from Claude response');
+      }
+      
     } catch (error) {
-      console.error('❌ OpenAI embedding error:', error.response?.data || error.message);
+      console.error('❌ Claude embedding error:', error.response?.data || error.message);
       throw error;
     }
   }
@@ -248,14 +269,10 @@ class EmbeddingService {
 
   /**
    * Get embedding dimension based on the service used
-   * OpenAI: 1536, Local Transformers/Legacy: 384
+   * Claude: 384 (padded), Legacy: 384
    */
   getEmbeddingDimension() {
-    if (this.useOpenAI) {
-      return 1536; // text-embedding-3-small dimension
-    } else {
-      return 384; // all-MiniLM-L6-v2 dimension
-    }
+    return 384; // All methods return 384-dimensional vectors
   }
 
   /**
@@ -263,10 +280,10 @@ class EmbeddingService {
    * Useful for debugging and monitoring
    */
   getActiveService() {
-    if (this.useOpenAI) {
-      return 'openai';
+    if (this.useClaude) {
+      return 'claude-api';
     } else {
-      return 'local-transformers';
+      return 'legacy-local';
     }
   }
 }
