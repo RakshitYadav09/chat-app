@@ -18,6 +18,7 @@ const io = socketIo(server, {
     origin: [
       "https://chat-app-one-gamma-66.vercel.app",
       "https://chat-eewfev13a-rezzs-projects.vercel.app",
+      "https://chat-app-rezzs-projects.vercel.app",
       "http://localhost:5173",
       "http://localhost:3000"
     ],
@@ -44,7 +45,8 @@ app.use(cors({
     
     const allowedOrigins = [
       "https://chat-app-one-gamma-66.vercel.app",
-      "https://chat-eewfev13a-rezzs-projects.vercel.app",
+      "https://chat-eewfev13a-rezzs-projects.vercel.app", 
+      "https://chat-app-rezzs-projects.vercel.app",
       "http://localhost:5173",
       "http://localhost:3000"
     ];
