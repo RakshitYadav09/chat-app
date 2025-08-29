@@ -1,7 +1,4 @@
 # faff Chat App — My Engineering Assignment
-
-Hey there! This is my solution to the faff engineering challenge. I built a full-stack chat app with real-time messaging, persistent storage, and AI-powered semantic search. It’s designed to be simple, fast, and easy to run — whether you’re testing locally or deploying to the cloud.
-
 ---
 
 ## 🚀 Features
