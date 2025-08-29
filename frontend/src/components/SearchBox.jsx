@@ -19,15 +19,22 @@ const SearchBox = ({ user, onOpenMessage }) => {
     setError('');
     
     try {
-      const response = await axios.get(`${API_BASE_URL}/messages/semantic-search`, {
+      // Use the new combined search endpoint
+      const response = await axios.get(`${API_BASE_URL}/messages/search`, {
         params: {
           userId: user._id,
           q: searchQuery.trim(),
-          limit: 5
+          limit: 10,
+          wordWeight: 0.4,
+          semanticWeight: 0.6,
+          combineResults: true
         }
       });
 
       setSearchResults(response.data.results || []);
+      
+      // Log search metadata for debugging
+      console.log('Search metadata:', response.data.metadata);
     } catch (error) {
       console.error('Search error:', error);
       setError(error.response?.data?.error || 'Failed to search messages');
@@ -71,8 +78,17 @@ const SearchBox = ({ user, onOpenMessage }) => {
           alignItems: 'center',
           gap: '0.5rem'
         }}>
-          🔍 Semantic Search
+          🔍 Smart Search
         </h3>
+        
+        <div style={{
+          fontSize: '0.8rem',
+          color: '#64748b',
+          marginBottom: '1rem',
+          lineHeight: '1.4'
+        }}>
+          Combines word search + AI semantic search for better results
+        </div>
         
         <div style={{ position: 'relative' }}>
           <input
@@ -214,8 +230,8 @@ const SearchBox = ({ user, onOpenMessage }) => {
             <div style={{ fontSize: '2.5rem' }}>💬</div>
             <div style={{ fontSize: '1rem', fontWeight: '500' }}>Search your messages</div>
             <div style={{ fontSize: '0.85rem', opacity: 0.8, textAlign: 'center', lineHeight: '1.4' }}>
-              Use semantic search to find messages by meaning,<br />
-              not just exact words
+              Smart search combines exact word matching with<br />
+              AI-powered semantic understanding for better results
             </div>
           </div>
         )}
@@ -233,6 +249,11 @@ const SearchBox = ({ user, onOpenMessage }) => {
             }}>
               <span>📊</span>
               <span>Top {searchResults.length} results</span>
+              {searchResults.length > 0 && (
+                <span style={{ marginLeft: 'auto', fontSize: '0.75rem' }}>
+                  ({searchResults[0].sources?.join(' + ') || 'combined'})
+                </span>
+              )}
             </div>
             
             {searchResults.map((result, index) => (
@@ -302,17 +323,48 @@ const SearchBox = ({ user, onOpenMessage }) => {
                   <span>{formatTime(result.createdAt)}</span>
                 </div>
 
-                {/* Similarity score */}
+                {/* Similarity score and sources */}
                 <div style={{
                   marginTop: '0.5rem',
-                  padding: '0.25rem 0.5rem',
-                  background: '#dbeafe',
-                  borderRadius: '6px',
-                  fontSize: '0.7rem',
-                  color: '#1e40af',
-                  display: 'inline-block'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  flexWrap: 'wrap'
                 }}>
-                  {Math.round((result.similarity || result.score || 0) * 100)}% match
+                  <div style={{
+                    padding: '0.25rem 0.5rem',
+                    background: '#dbeafe',
+                    borderRadius: '6px',
+                    fontSize: '0.7rem',
+                    color: '#1e40af',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}>
+                    <span>🎯</span>
+                    <span>{Math.round((result.finalScore || result.similarity || result.score || 0) * 100)}% match</span>
+                  </div>
+                  
+                  {result.sources && result.sources.length > 0 && (
+                    <div style={{
+                      display: 'flex',
+                      gap: '0.25rem',
+                      flexWrap: 'wrap'
+                    }}>
+                      {result.sources.map((source, idx) => (
+                        <span key={idx} style={{
+                          padding: '0.2rem 0.4rem',
+                          background: source === 'word' ? '#dcfce7' : '#f3e8ff',
+                          color: source === 'word' ? '#166534' : '#7c3aed',
+                          borderRadius: '4px',
+                          fontSize: '0.65rem',
+                          fontWeight: '500'
+                        }}>
+                          {source === 'word' ? '📝' : '🧠'} {source}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

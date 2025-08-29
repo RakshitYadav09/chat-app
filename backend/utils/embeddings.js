@@ -4,59 +4,99 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 class EmbeddingService {
   constructor() {
-    this.claudeApiKey = process.env.CLAUDE_API_KEY;
-    this.useClaude = !!this.claudeApiKey;
+  this.openaiApiKey = process.env.OPENAI_API_KEY;
+  this.claudeApiKey = process.env.CLAUDE_API_KEY;
+  // Prefer Claude when available (project requirement). Use OpenAI only as a fallback.
+  this.useClaude = !!this.claudeApiKey;
+  this.useOpenAI = !!this.openaiApiKey && !this.useClaude && this.openaiApiKey !== 'your-openai-api-key-here';
     
-    // Debug token loading
-    console.log('🔍 Token debugging:');
-    console.log(`Claude token: ${this.claudeApiKey ? this.claudeApiKey.substring(0, 8) + '...' : 'Not found'}`);
-    console.log(`Env file path: ${path.join(__dirname, '..', '.env')}`);
-    
-    // Priority order: Claude API > Legacy local fallback
+    // Priority order: Claude API → OpenAI API → Legacy local fallback
     if (this.useClaude) {
-      console.log('✅ Using Claude API for embeddings');
+      console.log('✅ Using Claude API for embeddings (primary)');
+    } else if (this.useOpenAI) {
+      console.log('✅ Using OpenAI API for embeddings (fallback)');
     } else {
       console.log('✅ Using legacy local embedding generation');
     }
   }
 
   /**
-   * Main embedding generation function with Claude API
-   * Priority: Claude API → Legacy local fallback
+   * Main embedding generation function with proper semantic embeddings
+   * Priority: OpenAI API → Claude API → Legacy local fallback
    * @param {string} text - Text to embed
    * @returns {Promise<number[]>} - Embedding vector
    */
   async generateEmbedding(text) {
     try {
-      // PRIORITY 1: Try Claude API if available (high quality, API-based)
+      // PRIORITY 1: Try Claude API (project requirement)
       if (this.useClaude) {
         return await this.generateClaudeEmbedding(text);
       }
+
+      // PRIORITY 2: Try OpenAI API if Claude not available
+      if (this.useOpenAI) {
+        return await this.generateOpenAIEmbedding(text);
+      }
       
-      // PRIORITY 2: Use legacy local implementation (no external dependencies)
+      // PRIORITY 3: Use legacy local implementation (fallback)
       console.log('🔄 Using legacy local embedding generation');
       return await this.generateLegacyLocalEmbedding(text);
       
     } catch (error) {
       console.error('Primary embedding generation failed, trying fallback:', error.message);
       
-      // Ultimate fallback: Legacy local implementation
+      // Try next available method
       try {
-        console.log('🔄 Falling back to legacy local embedding generation');
-        return await this.generateLegacyLocalEmbedding(text);
+        if (this.useClaude && !this.useOpenAI) {
+          console.log('🔄 Falling back to Claude API');
+          return await this.generateClaudeEmbedding(text);
+        } else {
+          console.log('🔄 Falling back to legacy local embedding generation');
+          return await this.generateLegacyLocalEmbedding(text);
+        }
       } catch (fallbackError) {
         console.error('❌ All embedding methods failed:', fallbackError.message);
         // Return a zero vector as last resort to prevent crashes
         console.log('🚨 Returning zero vector to prevent crash');
-        return new Array(384).fill(0);
+        return new Array(1536).fill(0);
       }
     }
   }
 
   /**
-   * Claude API embedding generation (high quality, API-based)
-   * Uses Claude to analyze semantic meaning and create feature vectors
+   * OpenAI API embedding generation (industry standard for semantic search)
+   * Uses text-embedding-3-small model for high-quality 1536-dimensional vectors
    */
+  async generateOpenAIEmbedding(text) {
+    try {
+      console.log('🚀 Generating OpenAI embedding for:', text.substring(0, 50) + '...');
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/embeddings',
+        {
+          input: text,
+          model: 'text-embedding-3-small',
+          encoding_format: 'float'
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 15000
+        }
+      );
+
+      const embedding = response.data.data[0].embedding;
+      console.log(`✅ OpenAI embedding generated: ${embedding.length} dimensions`);
+
+      return embedding;
+
+    } catch (error) {
+      console.error('❌ OpenAI embedding error:', error.response?.data || error.message);
+      throw error;
+    }
+  }
   async generateClaudeEmbedding(text) {
     try {
       console.log('🚀 Generating Claude embedding for:', text);
@@ -123,12 +163,12 @@ Format: number1,number2,number3,...,number20`
 
         console.log('Extracted embedding values:', embedding);
 
-        // Pad to 384 dimensions for compatibility
-        while (embedding.length < 384) {
+        // Pad to 1536 dimensions for compatibility with OpenAI
+        while (embedding.length < 1536) {
           embedding.push(0);
         }
 
-        return embedding.slice(0, 384);
+        return embedding.slice(0, 1536);
       } else {
         console.log('Could not extract 20 numbers from Claude response');
         throw new Error('Invalid Claude response format');
@@ -206,8 +246,8 @@ Format: number1,number2,number3,...,number20`
       possessive: ['my', 'your', 'his', 'her', 'our', 'their', 'mine', 'yours', 'ours', 'theirs']
     };
     
-    // Initialize 384-dimensional embedding (same as all-MiniLM-L6-v2)
-    const embedding = new Array(384).fill(0);
+    // Initialize 1536-dimensional embedding (same as text-embedding-3-small)
+    const embedding = new Array(1536).fill(0);
     
     // Process semantic groups with position-based encoding
     Object.entries(semanticGroups).forEach(([groupName, groupWords], groupIndex) => {
@@ -228,7 +268,7 @@ Format: number1,number2,number3,...,number20`
       
       if (groupScore > 0) {
         // Distribute group influence across multiple dimensions
-        const baseIndex = (groupIndex * 12) % 384;
+        const baseIndex = (groupIndex * 12) % 1536;
         const groupWeight = Math.min(groupScore / words.length * 3, 1); // Normalize
         
         // Primary signal
@@ -236,8 +276,8 @@ Format: number1,number2,number3,...,number20`
         
         // Secondary signals for context
         for (let i = 1; i <= 5; i++) {
-          embedding[(baseIndex + i) % 384] += groupWeight * (1 - i * 0.15);
-          embedding[(baseIndex - i + 384) % 384] += groupWeight * (1 - i * 0.15);
+          embedding[(baseIndex + i) % 1536] += groupWeight * (1 - i * 0.15);
+          embedding[(baseIndex - i + 1536) % 1536] += groupWeight * (1 - i * 0.15);
         }
       }
     });
@@ -246,9 +286,9 @@ Format: number1,number2,number3,...,number20`
     words.forEach((word, wordIndex) => {
       // Character composition features
       const charSum = word.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
-      const wordHash1 = charSum % 384;
-      const wordHash2 = (charSum * 17) % 384;
-      const wordHash3 = (charSum * 31) % 384;
+      const wordHash1 = charSum % 1536;
+      const wordHash2 = (charSum * 17) % 1536;
+      const wordHash3 = (charSum * 31) % 1536;
       
       const wordWeight = 1 / Math.sqrt(words.length); // Inverse frequency weighting
       
@@ -258,11 +298,11 @@ Format: number1,number2,number3,...,number20`
       
       // Position-based encoding (sentence structure)
       const positionWeight = 1 / (1 + wordIndex); // Earlier words get more weight
-      const positionIndex = (wordIndex * 7) % 384;
+      const positionIndex = (wordIndex * 7) % 1536;
       embedding[positionIndex] += positionWeight * 0.2;
       
       // Word length encoding
-      const lengthIndex = (word.length * 23) % 384;
+      const lengthIndex = (word.length * 23) % 1536;
       embedding[lengthIndex] += wordWeight * 0.1;
     });
     
@@ -272,9 +312,9 @@ Format: number1,number2,number3,...,number20`
     const avgWordLength = words.reduce((sum, word) => sum + word.length, 0) / wordCount;
     
     // Global text features
-    embedding[textLength % 384] += 0.05;
-    embedding[(wordCount * 19) % 384] += 0.05;
-    embedding[Math.floor(avgWordLength * 41) % 384] += 0.05;
+    embedding[textLength % 1536] += 0.05;
+    embedding[(wordCount * 19) % 1536] += 0.05;
+    embedding[Math.floor(avgWordLength * 41) % 1536] += 0.05;
     
     // Add sentence structure signals
     const questionWords = words.filter(word => 
@@ -295,17 +335,17 @@ Format: number1,number2,number3,...,number20`
     }
     
     // Fallback: random normalized vector if all else fails
-    const randomEmbedding = Array.from({length: 384}, () => Math.random() - 0.5);
+    const randomEmbedding = Array.from({length: 1536}, () => Math.random() - 0.5);
     const randomMagnitude = Math.sqrt(randomEmbedding.reduce((sum, val) => sum + val * val, 0));
     return randomEmbedding.map(val => val / randomMagnitude);
   }
 
   /**
    * Get embedding dimension based on the service used
-   * Claude: 384 (padded), Legacy: 384
+   * OpenAI: 1536, Claude: 1536 (padded), Legacy: 1536
    */
   getEmbeddingDimension() {
-    return 384; // All methods return 384-dimensional vectors
+    return 1536; // All methods return 1536-dimensional vectors
   }
 
   /**
@@ -313,7 +353,9 @@ Format: number1,number2,number3,...,number20`
    * Useful for debugging and monitoring
    */
   getActiveService() {
-    if (this.useClaude) {
+    if (this.useOpenAI) {
+      return 'openai-api';
+    } else if (this.useClaude) {
       return 'claude-api';
     } else {
       return 'legacy-local';

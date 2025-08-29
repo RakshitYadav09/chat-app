@@ -10,6 +10,7 @@ const messageRoutes = require('./routes/messages');
 const Message = require('./models/Message');
 const embeddingService = require('./utils/embeddings');
 const PerformanceMonitor = require('./utils/performanceMonitor');
+const enhancedSearch = require('./utils/enhancedSearch');
 
 const app = express();
 const server = http.createServer(app);
@@ -184,6 +185,25 @@ io.on('connection', (socket) => {
       
       await newMessage.populate('senderId', 'name email');
       await newMessage.populate('receiverId', 'name email');
+
+      // VECTOR DATABASE INDEXING: Index message for semantic search
+      try {
+        console.log('🔍 Indexing message in vector database...');
+        const indexStart = Date.now();
+        await enhancedSearch.indexMessage({
+          _id: newMessage._id,
+          content: message,
+          userId: senderId,
+          timestamp: newMessage.createdAt,
+          senderId: newMessage.senderId,
+          receiverId: newMessage.receiverId
+        });
+        const indexTime = Date.now() - indexStart;
+        console.log(`✅ Message indexed in vector database (${indexTime}ms)`);
+      } catch (indexError) {
+        console.warn('⚠️  Failed to index message in vector database:', indexError.message);
+        // Don't fail the message send if indexing fails
+      }
 
       // Record message processing metrics
       const totalTime = Date.now() - messageStart;

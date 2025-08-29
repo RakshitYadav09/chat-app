@@ -2,6 +2,8 @@ const express = require('express');
 const Message = require('../models/Message');
 const embeddingService = require('../utils/embeddings');
 const semanticSearch = require('../utils/semanticSearch');
+const enhancedSearch = require('../utils/enhancedSearch');
+const vectorDatabase = require('../utils/vectorDatabase');
 const router = express.Router();
 
 // Import performance monitor (will be initialized in main app)
@@ -70,12 +72,17 @@ router.post('/', async (req, res) => {
     await newMessage.populate('senderId', 'name email');
     await newMessage.populate('receiverId', 'name email');
 
-    // TODO: QDRANT STORAGE (when implementing vector database)
-    // If using Qdrant, index the message here:
-    // await qdrantService.indexMessage(newMessage._id, message, senderId, {
-    //   receiverId, 
-    //   timestamp: newMessage.createdAt
-    // });
+    // QDRANT STORAGE: index new message asynchronously
+    if (vectorDatabase && vectorDatabase.isEnabled) {
+      vectorDatabase.indexMessage({
+        _id: newMessage._id,
+        content: newMessage.message,
+        userId: newMessage.senderId.toString(),
+        timestamp: newMessage.createdAt,
+        senderId: newMessage.senderId,
+        receiverId: newMessage.receiverId
+      }).catch(err => console.warn('⚠️ Failed to index message in vector DB:', err.message));
+    }
 
     res.status(201).json({ 
       message: 'Message sent successfully',
@@ -160,6 +167,106 @@ router.get('/conversation', async (req, res) => {
   }
 });
 
+// Combined word and semantic search endpoint
+router.get('/search', async (req, res) => {
+  const searchStart = Date.now();
+
+  try {
+    const {
+      userId,
+      q: query,
+      limit = 10,
+      minSimilarity = 0.1,
+      wordWeight = 0.4,
+      semanticWeight = 0.6,
+      combineResults = 'true'
+    } = req.query;
+
+    if (!userId || !query) {
+      return res.status(400).json({
+        error: 'userId and q (query) parameters are required'
+      });
+    }
+
+    console.log(`🔍 Combined search API: userId=${userId}, query="${query}", limit=${limit}`);
+
+    // Use the enhanced search service
+    const searchResult = await enhancedSearch.combinedSearch(
+      userId,
+      query,
+      parseInt(limit),
+      {
+        minSimilarity: parseFloat(minSimilarity),
+        combineResults: combineResults === 'true',
+        wordWeight: parseFloat(wordWeight),
+        semanticWeight: parseFloat(semanticWeight)
+      }
+    );
+
+    const searchTime = Date.now() - searchStart;
+
+    // Log performance metrics
+    if (performanceMonitor) {
+      performanceMonitor.recordDbOperation('combined_search', searchTime);
+    }
+
+    console.log(`🎯 Combined search completed in ${searchTime}ms`);
+
+    // Format results for API response
+    const formattedResults = searchResult.results.map(result => ({
+      rank: result.rank,
+      _id: result.message._id,
+      senderId: result.message.senderId,
+      receiverId: result.message.receiverId,
+      message: result.message.content,
+      timestamp: result.message.timestamp,
+      similarity: result.similarity,
+      wordScore: result.wordScore,
+      finalScore: result.finalScore,
+      sources: result.sources,
+      searchType: result.searchType,
+      scoreDescription: getScoreDescription(result.finalScore || result.score),
+      preview: result.message.content.length > 100
+        ? result.message.content.substring(0, 100) + '...'
+        : result.message.content
+    }));
+
+    // Enhanced response with comprehensive metadata
+  const response = {
+      query,
+      results: formattedResults,
+      metadata: {
+    ...searchResult.metadata,
+        searchTime,
+        total: formattedResults.length,
+        searchParams: {
+          userId,
+          limit: parseInt(limit),
+          minSimilarity: parseFloat(minSimilarity),
+          wordWeight: parseFloat(wordWeight),
+          semanticWeight: parseFloat(semanticWeight),
+          combineResults: combineResults === 'true'
+        },
+        topResult: formattedResults.length > 0 ? {
+          score: formattedResults[0].finalScore || formattedResults[0].score,
+          description: formattedResults[0].scoreDescription,
+          message: formattedResults[0].preview,
+          sources: formattedResults[0].sources
+        } : null
+      }
+    };
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('❌ Combined search API error:', error);
+    res.status(500).json({
+      error: 'Failed to perform combined search',
+      details: error.message
+    });
+  }
+});
+
 // Semantic search endpoint using local transformers
 router.get('/semantic-search', async (req, res) => {
   const searchStart = Date.now();
@@ -175,8 +282,8 @@ router.get('/semantic-search', async (req, res) => {
 
     console.log(`🔍 Semantic search API: userId=${userId}, query="${query}", limit=${limit}`);
 
-    // Use the new semantic search service with local transformers
-    const results = await semanticSearch.searchMessages(
+    // Use the enhanced search service for semantic search
+    const results = await enhancedSearch.semanticSearch(
       userId, 
       query, 
       parseInt(limit), 
@@ -214,9 +321,9 @@ router.get('/semantic-search', async (req, res) => {
       results: formattedResults,
       metadata: {
         total: results.length,
-        searchType: 'local_transformers',
-        model: 'sentence-transformers/all-MiniLM-L6-v2',
-        dimensions: 384,
+      searchType: vectorDatabase && vectorDatabase.isEnabled ? 'qdrant_vector_search' : 'mongo_semantic',
+      model: embeddingService.getActiveService(),
+      dimensions: embeddingService.getEmbeddingDimension(),
         searchParams: {
           userId,
           limit: parseInt(limit),
@@ -268,7 +375,7 @@ function cosineSimilarity(vecA, vecB) {
 router.get('/search-stats', async (req, res) => {
   try {
     const { userId } = req.query;
-    const stats = await semanticSearch.getSearchStats(userId);
+    const stats = await enhancedSearch.getSearchStats(userId);
     res.json(stats);
   } catch (error) {
     console.error('❌ Search stats error:', error);
@@ -285,7 +392,7 @@ router.post('/generate-embeddings', async (req, res) => {
     const { userId } = req.body;
     console.log(`🔄 Batch generating embeddings for user: ${userId || 'all users'}`);
     
-    const processedCount = await semanticSearch.generateMissingEmbeddings(userId);
+    const processedCount = await enhancedSearch.generateMissingEmbeddings(userId);
     
     res.json({
       message: 'Embeddings generated successfully',
