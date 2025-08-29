@@ -26,7 +26,42 @@ const ChatBox = ({ user, onLogout }) => {
     // Listen for incoming messages
     socketRef.current.on('messageReceived', (message) => {
       setMessages(prevMessages => {
-        // Check if message already exists to avoid duplicates
+        // Normalize server sender id (could be string or populated object)
+        let serverSenderId = null;
+        if (!message) return prevMessages;
+        if (typeof message.senderId === 'string' || typeof message.senderId === 'number') {
+          serverSenderId = String(message.senderId);
+        } else if (message.senderId && (message.senderId._id || message.senderId.id)) {
+          serverSenderId = String(message.senderId._id || message.senderId.id);
+        }
+
+        // Try to find a matching optimistic message (same sender, same text)
+        const matchIndex = prevMessages.findIndex(m => {
+          if (!m || !m._meta || !m._meta.sending) return false;
+          const optSenderId = String(m.senderId?._id || m.senderId);
+          if (!serverSenderId) return false;
+          if (optSenderId !== serverSenderId) return false;
+          if (!m.message || !message.message) return false;
+          if (m.message !== message.message) return false;
+
+          // Optional: if both have timestamps, ensure they are within 2s
+          const optTime = m.createdAt ? new Date(m.createdAt).getTime() : null;
+          const srvTime = message.createdAt ? new Date(message.createdAt).getTime() : null;
+          if (optTime && srvTime) {
+            const diff = Math.abs(optTime - srvTime);
+            if (diff > 2000) return false;
+          }
+
+          return true;
+        });
+
+        if (matchIndex !== -1) {
+          const copy = [...prevMessages];
+          copy[matchIndex] = message;
+          return copy;
+        }
+
+        // Otherwise avoid duplicates by id
         const exists = prevMessages.some(msg => msg._id === message._id);
         if (!exists) {
           return [...prevMessages, message];
@@ -149,9 +184,22 @@ const ChatBox = ({ user, onLogout }) => {
         message: newMessage.trim()
       };
 
+      // Optimistic UI: add a temporary message so the user sees it immediately
+      const tempId = `temp-${Date.now()}`;
+      const tempMessage = {
+        _id: tempId,
+        senderId: { _id: user._id, name: user.name },
+        receiverId: { _id: selectedUser._id, name: selectedUser.name },
+        message: messageData.message,
+        createdAt: new Date().toISOString(),
+        _meta: { sending: true }
+      };
+
+      setMessages(prev => [...prev, tempMessage]);
+
       // Send via socket for real-time delivery
       socketRef.current.emit('sendMessage', messageData);
-      
+
       // Clear input
       setNewMessage('');
     } catch (error) {

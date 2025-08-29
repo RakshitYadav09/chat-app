@@ -278,9 +278,9 @@ class PerformanceMonitor {
       console.log('   📈 High traffic detected - consider horizontal scaling');
     }
     
-    if (health.status === 'critical') {
-      console.log('   🚨 IMMEDIATE ACTION REQUIRED - System approaching limits');
-    }
+    // if (health.status === 'critical') {
+    //   console.log('   🚨 IMMEDIATE ACTION REQUIRED - System approaching limits');
+    // }
   }
 
   // Start periodic logging (every 30 seconds) - DISABLED IN PRODUCTION
@@ -295,17 +295,22 @@ class PerformanceMonitor {
 
   // Monitor system resources periodically - REDUCED LOGGING
   startResourceMonitoring() {
+    // Only emit console alerts when explicitly enabled (avoid noisy logs in production).
+    const shouldLog = (process.env.NODE_ENV !== 'production') && (process.env.ENABLE_METRIC_LOGGING === 'true');
+
     setInterval(() => {
       this.metrics.memoryUsage = this.getResourceUsage();
-      
-      // Only log critical conditions, not warnings
+
+      // Only log critical conditions when logging is explicitly enabled
       const health = this.getSystemHealth();
-      if (health.status === 'critical') {
+      if (shouldLog && health.status === 'critical') {
         console.log('\n🚨 CRITICAL ALERT 🚨');
         console.log('System is under severe stress!');
         console.log(`Critical issues: ${health.critical.join(', ')}`);
         console.log('Consider immediate action to prevent system failure.\n');
       }
+      // In production we keep the metrics internal (no console output). The metrics
+      // are available via the /metrics endpoint and PerformanceMonitor.getSimpleMetrics().
     }, 10000); // 10 seconds (reduced frequency)
   }
 

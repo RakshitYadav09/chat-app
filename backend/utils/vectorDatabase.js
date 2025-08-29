@@ -1,5 +1,6 @@
 const { QdrantClient } = require('@qdrant/js-client-rest');
 const embeddingService = require('./embeddings');
+const metrics = require('./metrics');
 
 class VectorDatabaseService {
   constructor() {
@@ -115,6 +116,7 @@ class VectorDatabaseService {
   // Generate embedding for the message
   const embedding = await embeddingService.generateEmbedding(message.content);
   const embedLatency = Date.now() - embedStart;
+  try { metrics.embeddingTimeHistogram.observe(embedLatency); } catch (e) {}
 
       // Generate UUID for the point ID (Qdrant requirement)
       const pointId = this.generateUUID();
@@ -138,12 +140,13 @@ class VectorDatabaseService {
       await this.client.upsert(this.collectionName, {
         points: [point]
       });
-      const upsertLatency = Date.now() - upsertStart;
+  const upsertLatency = Date.now() - upsertStart;
+  try { metrics.qdrantUpsertHistogram.observe(upsertLatency); } catch (e) {}
 
-      console.log(`✅ Indexed message: ${message._id} (Point ID: ${pointId})`);
-      console.log(`   embedding_time_ms=${embedLatency} upsert_time_ms=${upsertLatency} userId=${point.payload.userId}`);
+  console.log(`✅ Indexed message: ${message._id} (Point ID: ${pointId})`);
+  console.log(`   embedding_time_ms=${embedLatency} upsert_time_ms=${upsertLatency} userId=${point.payload.userId}`);
 
-      return pointId; // Return the point ID for potential future use
+  return pointId; // Return the point ID for potential future use
     } catch (error) {
       console.error(`❌ Failed to index message ${message._id}:`, error.message);
     }

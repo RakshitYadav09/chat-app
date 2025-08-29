@@ -10,6 +10,7 @@ const messageRoutes = require('./routes/messages');
 const Message = require('./models/Message');
 const embeddingService = require('./utils/embeddings');
 const PerformanceMonitor = require('./utils/performanceMonitor');
+const metrics = require('./utils/metrics');
 const enhancedSearch = require('./utils/enhancedSearch');
 
 const app = express();
@@ -69,17 +70,14 @@ if (messageRoutes.setPerformanceMonitor && performanceMonitor) {
 }
 app.use('/messages', messageRoutes);
 
-// Performance metrics endpoint
-app.get('/metrics', (req, res) => {
-  if (!performanceMonitor) {
-    return res.json({ error: 'Performance monitoring disabled' });
+// Prometheus metrics endpoint (exposes app and custom metrics)
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', metrics.register.contentType);
+    res.send(await metrics.register.metrics());
+  } catch (err) {
+    res.status(500).send(err.message);
   }
-  const metrics = performanceMonitor.getSimpleMetrics();
-  res.json({
-    timestamp: new Date().toISOString(),
-    server: 'chat-app-backend',
-    metrics
-  });
 });
 
 // Dashboard redirect
