@@ -283,19 +283,22 @@ class PerformanceMonitor {
     }
   }
 
-  // Start periodic logging (every 30 seconds)
+  // Start periodic logging (every 30 seconds) - DISABLED IN PRODUCTION
   startPeriodicLogging() {
-    setInterval(() => {
-      this.logMetrics();
-    }, 30000); // 30 seconds
+    // Only log metrics if explicitly enabled in development
+    if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_METRIC_LOGGING === 'true') {
+      setInterval(() => {
+        this.logMetrics();
+      }, 30000); // 30 seconds
+    }
   }
 
-  // Monitor system resources periodically
+  // Monitor system resources periodically - REDUCED LOGGING
   startResourceMonitoring() {
     setInterval(() => {
       this.metrics.memoryUsage = this.getResourceUsage();
       
-      // Check for critical conditions
+      // Only log critical conditions, not warnings
       const health = this.getSystemHealth();
       if (health.status === 'critical') {
         console.log('\n🚨 CRITICAL ALERT 🚨');
@@ -303,7 +306,7 @@ class PerformanceMonitor {
         console.log(`Critical issues: ${health.critical.join(', ')}`);
         console.log('Consider immediate action to prevent system failure.\n');
       }
-    }, 5000); // 5 seconds
+    }, 10000); // 10 seconds (reduced frequency)
   }
 
   // Get simple metrics for API endpoints
