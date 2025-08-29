@@ -39,26 +39,10 @@ if (process.env.ENABLE_PERFORMANCE_MONITORING === 'true') {
 
 // Middleware
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      "https://chat-app-one-gamma-66.vercel.app",
-      "https://chat-eewfev13a-rezzs-projects.vercel.app", 
-      "https://chat-app-rezzs-projects.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:3000"
-    ];
-    
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    } else {
-      console.log(`CORS blocked origin: ${origin}`);
-      return callback(null, true); // Allow all origins temporarily to debug
-    }
-  },
-  credentials: true
+  origin: true, // Allow all origins temporarily
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 app.use(express.json());
 
@@ -252,11 +236,22 @@ io.on('connection', (socket) => {
 const connectDB = async () => {
   try {
     const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/chatapp';
-    await mongoose.connect(mongoUri);
-    console.log('Connected to MongoDB');
+    console.log('🔄 Connecting to MongoDB...');
+    await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+    });
+    console.log('✅ Connected to MongoDB successfully');
   } catch (error) {
-    console.error('MongoDB connection error:', error);
-    process.exit(1);
+    console.error('❌ MongoDB connection error:', error.message);
+    console.error('MongoDB URI used:', process.env.MONGODB_URI ? 'Set' : 'Not set');
+    // Don't exit process in production - let it retry
+    if (process.env.NODE_ENV === 'production') {
+      console.log('🔄 Will retry MongoDB connection in 5 seconds...');
+      setTimeout(() => connectDB(), 5000);
+    } else {
+      process.exit(1);
+    }
   }
 };
 

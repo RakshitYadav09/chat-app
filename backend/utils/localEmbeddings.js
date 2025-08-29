@@ -72,11 +72,21 @@ class LocalEmbeddingService {
     try {
       console.log(`🧠 Generating local embedding for: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
       
-      // Ensure model is loaded
-      const model = await this.loadModel();
+      // Ensure model is loaded with timeout
+      const model = await Promise.race([
+        this.loadModel(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Model loading timeout')), 30000)
+        )
+      ]);
       
-      // Generate embeddings
-      const output = await model(text, { pooling: 'mean', normalize: true });
+      // Generate embeddings with timeout
+      const output = await Promise.race([
+        model(text, { pooling: 'mean', normalize: true }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Embedding generation timeout')), 10000)
+        )
+      ]);
       
       // Extract the embedding array
       let embedding;
@@ -98,8 +108,10 @@ class LocalEmbeddingService {
       return embedding;
       
     } catch (error) {
-      console.error('❌ Error generating local embedding:', error);
-      throw error;
+      console.error('❌ Error generating local embedding:', error.message);
+      // Return zero vector to prevent crashes
+      console.log('🚨 Returning zero vector to prevent crash');
+      return new Array(384).fill(0);
     }
   }
 

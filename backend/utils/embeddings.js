@@ -34,14 +34,26 @@ class EmbeddingService {
       }
       
       // PRIORITY 2: Use local transformer model (high quality, completely free)
-      return await localEmbeddings.embedText(text);
+      try {
+        return await localEmbeddings.embedText(text);
+      } catch (localError) {
+        console.error('❌ Local transformer failed:', localError.message);
+        throw localError;
+      }
       
     } catch (error) {
       console.error('Primary embedding generation failed, trying fallback:', error.message);
       
       // Ultimate fallback: Try legacy local implementation if transformer fails
       console.log('🔄 Falling back to legacy local embedding generation');
-      return await this.generateLegacyLocalEmbedding(text);
+      try {
+        return await this.generateLegacyLocalEmbedding(text);
+      } catch (fallbackError) {
+        console.error('❌ All embedding methods failed:', fallbackError.message);
+        // Return a zero vector as last resort to prevent crashes
+        console.log('🚨 Returning zero vector to prevent crash');
+        return new Array(384).fill(0);
+      }
     }
   }
 
