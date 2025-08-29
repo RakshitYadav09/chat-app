@@ -10,9 +10,9 @@ services:
       - key: PORT
         value: 10000
       - key: MONGODB_URI
-        value: mongodb+srv://your-username:your-password@cluster0.xxxxx.mongodb.net/chatapp?retryWrites=true&w=majority
+        fromSecret: mongodb_uri
       - key: JWT_SECRET
-        value: your-super-secret-jwt-key-here
+        generateValue: true
       - key: CORS_ORIGIN
         value: https://chatapp-frontend.vercel.app
     healthCheckPath: /health
