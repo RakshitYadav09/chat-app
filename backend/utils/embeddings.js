@@ -1,4 +1,6 @@
 const axios = require('axios');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 class EmbeddingService {
   constructor() {
@@ -8,6 +10,7 @@ class EmbeddingService {
     // Debug token loading
     console.log('🔍 Token debugging:');
     console.log(`Claude token: ${this.claudeApiKey ? this.claudeApiKey.substring(0, 8) + '...' : 'Not found'}`);
+    console.log(`Env file path: ${path.join(__dirname, '..', '.env')}`);
     
     // Priority order: Claude API > Legacy local fallback
     if (this.useClaude) {
@@ -52,22 +55,48 @@ class EmbeddingService {
 
   /**
    * Claude API embedding generation (high quality, API-based)
-   * Returns embeddings using Claude's understanding
+   * Uses Claude to analyze semantic meaning and create feature vectors
    */
   async generateClaudeEmbedding(text) {
     try {
-      console.log('🚀 Generating Claude embedding');
-      
-      // Claude doesn't have a direct embedding API, so we'll use a creative approach
-      // We'll ask Claude to analyze the text and return semantic features
+      console.log('🚀 Generating Claude embedding for:', text);
+
+      // Use a more structured approach for semantic analysis
       const response = await axios.post(
         'https://api.anthropic.com/v1/messages',
         {
           model: 'claude-3-haiku-20240307',
-          max_tokens: 1000,
+          max_tokens: 500,
+          temperature: 0.1, // Low temperature for consistent results
           messages: [{
             role: 'user',
-            content: `Analyze this text and extract 20 key semantic features as numbers between -1 and 1. Return only a JSON array of 20 numbers: "${text}"`
+            content: `Analyze the semantic meaning of this text and rate it on 20 different dimensions from -1 to 1:
+
+Text: "${text}"
+
+Please respond with exactly 20 numbers separated by commas, representing:
+1. Greeting/Farewell (hello, goodbye, etc.)
+2. Gratitude (thanks, appreciate, etc.)
+3. Politeness (please, sorry, etc.)
+4. Questions (what, how, why, etc.)
+5. Answers (yes, no, maybe, etc.)
+6. Positive emotion (happy, excited, etc.)
+7. Negative emotion (sad, angry, etc.)
+8. Communication (chat, message, etc.)
+9. Help/Support (assist, guide, etc.)
+10. Time-related (today, tomorrow, etc.)
+11. Technology (code, app, etc.)
+12. Food/Drink (eat, hungry, etc.)
+13. Weather (rain, sunny, etc.)
+14. Location (here, there, etc.)
+15. Quantity (many, few, etc.)
+16. Intensity (very, extremely, etc.)
+17. Personal pronouns (I, you, we, etc.)
+18. Possessive (my, your, etc.)
+19. Action verbs (work, play, etc.)
+20. Abstract concepts (love, freedom, etc.)
+
+Format: number1,number2,number3,...,number20`
           }]
         },
         {
@@ -76,31 +105,35 @@ class EmbeddingService {
             'anthropic-version': '2023-06-01',
             'Content-Type': 'application/json'
           },
-          timeout: 15000 // 15 second timeout
+          timeout: 15000
         }
       );
 
-      // Parse the response to extract numbers
       const content = response.data.content[0].text;
+      console.log('Claude response:', content);
+
+      // Extract numbers from the response
       const numbers = content.match(/-?\d+\.?\d*/g);
-      
+
       if (numbers && numbers.length >= 20) {
-        // Convert to numbers and ensure they're between -1 and 1
         const embedding = numbers.slice(0, 20).map(n => {
           const num = parseFloat(n);
-          return Math.max(-1, Math.min(1, num)); // Clamp to [-1, 1]
+          return Math.max(-1, Math.min(1, num)); // Ensure range [-1, 1]
         });
-        
-        // Pad to 384 dimensions with zeros for compatibility
+
+        console.log('Extracted embedding values:', embedding);
+
+        // Pad to 384 dimensions for compatibility
         while (embedding.length < 384) {
           embedding.push(0);
         }
-        
+
         return embedding.slice(0, 384);
       } else {
-        throw new Error('Could not extract semantic features from Claude response');
+        console.log('Could not extract 20 numbers from Claude response');
+        throw new Error('Invalid Claude response format');
       }
-      
+
     } catch (error) {
       console.error('❌ Claude embedding error:', error.response?.data || error.message);
       throw error;

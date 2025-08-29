@@ -1,5 +1,5 @@
 const Message = require('../models/Message');
-const localEmbeddings = require('./localEmbeddings');
+const embeddingService = require('./embeddings');
 
 class SemanticSearchService {
   constructor() {
@@ -20,7 +20,7 @@ class SemanticSearchService {
       
       // Generate embedding for the search query
       console.log('🎯 Generating query embedding...');
-      const queryEmbedding = await localEmbeddings.embedText(query);
+      const queryEmbedding = await embeddingService.generateEmbedding(query);
       
       // Fetch all messages for the user that have embeddings
       console.log('📚 Fetching user messages with embeddings...');
@@ -46,7 +46,7 @@ class SemanticSearchService {
       const allScores = [];
       for (const message of messages) {
         try {
-          const similarity = localEmbeddings.cosineSimilarity(queryEmbedding, message.embedding);
+          const similarity = this.cosineSimilarity(queryEmbedding, message.embedding);
           allScores.push(similarity);
           
           // Debug: Log first few similarity scores
@@ -120,7 +120,7 @@ class SemanticSearchService {
     try {
       console.log(`🧠 Generating embedding for message: "${message.message.substring(0, 50)}..."`);
       
-      const embedding = await localEmbeddings.embedText(message.message);
+      const embedding = await embeddingService.generateEmbedding(message.message);
       
       // Update the message with the embedding
       await Message.findByIdAndUpdate(message._id, {
@@ -209,12 +209,47 @@ class SemanticSearchService {
         totalMessages,
         embeddedMessages,
         embeddingCoverage: totalMessages > 0 ? embeddedMessages / totalMessages : 0,
-        modelInfo: localEmbeddings.getModelInfo()
+        modelInfo: {
+          name: 'Claude API + Legacy Fallback',
+          dimensions: 384,
+          service: embeddingService.getActiveService()
+        }
       };
     } catch (error) {
       console.error('❌ Failed to get search stats:', error);
       throw error;
     }
+  }
+
+  /**
+   * Compute cosine similarity between two embedding vectors
+   * @param {Array|Float32Array} embedding1 - First embedding vector
+   * @param {Array|Float32Array} embedding2 - Second embedding vector
+   * @returns {number} Cosine similarity score (0-1)
+   */
+  cosineSimilarity(embedding1, embedding2) {
+    if (embedding1.length !== embedding2.length) {
+      throw new Error(`Embedding dimensions don't match: ${embedding1.length} vs ${embedding2.length}`);
+    }
+
+    let dotProduct = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+
+    for (let i = 0; i < embedding1.length; i++) {
+      dotProduct += embedding1[i] * embedding2[i];
+      norm1 += embedding1[i] * embedding1[i];
+      norm2 += embedding2[i] * embedding2[i];
+    }
+
+    const magnitude1 = Math.sqrt(norm1);
+    const magnitude2 = Math.sqrt(norm2);
+
+    if (magnitude1 === 0 || magnitude2 === 0) {
+      return 0;
+    }
+
+    return dotProduct / (magnitude1 * magnitude2);
   }
 }
 
