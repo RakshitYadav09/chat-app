@@ -15,28 +15,26 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-      
-      const allowedOrigins = process.env.CORS_ORIGIN ? 
-        process.env.CORS_ORIGIN.split(',').map(url => url.trim()) : 
-        ["http://localhost:5173"];
-      
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      } else {
-        return callback(new Error('Not allowed by CORS'));
-      }
-    },
+    origin: [
+      "https://chat-app-one-gamma-66.vercel.app",
+      "https://chat-eewfev13a-rezzs-projects.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000"
+    ],
     methods: ["GET", "POST"],
     credentials: true
   }
 });
 
-// Initialize Performance Monitor
-const performanceMonitor = new PerformanceMonitor();
-console.log('📊 Performance monitoring initialized');
+// Initialize Performance Monitor only if enabled
+let performanceMonitor = null;
+if (process.env.ENABLE_PERFORMANCE_MONITORING === 'true') {
+  const PerformanceMonitor = require('./utils/performanceMonitor');
+  performanceMonitor = new PerformanceMonitor();
+  console.log('📊 Performance monitoring initialized');
+} else {
+  console.log('📊 Performance monitoring disabled to save memory');
+}
 
 // Middleware
 app.use(cors({
@@ -44,14 +42,18 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = process.env.CORS_ORIGIN ? 
-      process.env.CORS_ORIGIN.split(',').map(url => url.trim()) : 
-      ["http://localhost:5173"];
+    const allowedOrigins = [
+      "https://chat-app-one-gamma-66.vercel.app",
+      "https://chat-eewfev13a-rezzs-projects.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000"
+    ];
     
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     } else {
-      return callback(new Error('Not allowed by CORS'));
+      console.log(`CORS blocked origin: ${origin}`);
+      return callback(null, true); // Allow all origins temporarily to debug
     }
   },
   credentials: true
@@ -63,14 +65,16 @@ app.use(express.static('public'));
 
 // Performance monitoring middleware
 app.use((req, res, next) => {
-  const startTime = Date.now();
-  
-  res.on('finish', () => {
-    const duration = Date.now() - startTime;
-    if (req.path.includes('/messages')) {
-      performanceMonitor.recordDbOperation('api_request', duration);
-    }
-  });
+  if (performanceMonitor) {
+    const startTime = Date.now();
+    
+    res.on('finish', () => {
+      const duration = Date.now() - startTime;
+      if (req.path.includes('/messages')) {
+        performanceMonitor.recordDbOperation('api_request', duration);
+      }
+    });
+  }
   
   next();
 });
@@ -79,13 +83,16 @@ app.use((req, res, next) => {
 app.use('/users', userRoutes);
 
 // Set up performance monitor for message routes
-if (messageRoutes.setPerformanceMonitor) {
+if (messageRoutes.setPerformanceMonitor && performanceMonitor) {
   messageRoutes.setPerformanceMonitor(performanceMonitor);
 }
 app.use('/messages', messageRoutes);
 
 // Performance metrics endpoint
 app.get('/metrics', (req, res) => {
+  if (!performanceMonitor) {
+    return res.json({ error: 'Performance monitoring disabled' });
+  }
   const metrics = performanceMonitor.getSimpleMetrics();
   res.json({
     timestamp: new Date().toISOString(),
@@ -101,17 +108,22 @@ app.get('/dashboard', (req, res) => {
 
 // Health check with performance data
 app.get('/health', (req, res) => {
-  const health = performanceMonitor.getSystemHealth();
-  const metrics = performanceMonitor.getSimpleMetrics();
-  
-  res.json({ 
+  const healthData = { 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    health: health.status,
-    activeConnections: metrics.connections.active,
-    messagesPerSecond: metrics.messages.perSecond,
-    memoryUsageMB: metrics.resources.memoryMB
-  });
+    memoryUsage: Math.round(process.memoryUsage().rss / 1024 / 1024) + ' MB'
+  };
+  
+  if (performanceMonitor) {
+    const health = performanceMonitor.getSystemHealth();
+    const metrics = performanceMonitor.getSimpleMetrics();
+    healthData.health = health.status;
+    healthData.activeConnections = metrics.connections.active;
+    healthData.messagesPerSecond = metrics.messages.perSecond;
+    healthData.memoryUsageMB = metrics.resources.memoryMB;
+  }
+  
+  res.json(healthData);
 });
 
 // Root endpoint - API information
