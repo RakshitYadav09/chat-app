@@ -72,7 +72,7 @@ docker run -p 5173:5173 -e VITE_API_BASE_URL=http://localhost:3000 chatapp-front
 
 **Example Connection String:**
 ```
-mongodb+srv://chatapp_user:mySecurePassword@cluster0.xxxxx.mongodb.net/chatapp?retryWrites=true&w=majority
+mongodb+srv://username:password@cluster.mongodb.net/database?retryWrites=true&w=majority
 ```
 
 ## 🔧 Step 3: Configure Environment Variables
@@ -91,8 +91,8 @@ cp .env.example .env
 ```bash
 NODE_ENV=production
 PORT=10000
-MONGODB_URI=mongodb+srv://your-username:your-password@cluster0.xxxxx.mongodb.net/chatapp?retryWrites=true&w=majority
-JWT_SECRET=your-super-secret-jwt-key-here-make-it-long-and-random
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/database?retryWrites=true&w=majority
+JWT_SECRET=replace_with_secure_random_string_here
 CORS_ORIGIN=https://your-frontend-url.vercel.app
 ENABLE_PERFORMANCE_MONITORING=true
 ```
@@ -146,6 +146,20 @@ ENABLE_PERFORMANCE_MONITORING=true
 - **Region:** Oregon (or closest to your users)
 - **Health Check Path:** `/health`
 - **Auto-Deploy:** Enable for main branch
+
+### 4.4 Alternative: Using Render Secrets
+
+For better security, you can use Render's secret management:
+
+1. In Render dashboard, go to your service settings
+2. Add a new secret:
+   - **Name:** `mongodb_uri`
+   - **Value:** Your actual MongoDB connection string
+3. Update the environment variables to use:
+   ```
+   MONGODB_URI: fromSecret: mongodb_uri
+   JWT_SECRET: generateValue: true
+   ```
 
 ### 4.4 Deploy
 
