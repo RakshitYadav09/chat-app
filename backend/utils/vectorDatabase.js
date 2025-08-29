@@ -111,8 +111,10 @@ class VectorDatabaseService {
     if (!this.isEnabled) return;
 
     try {
-      // Generate embedding for the message
-      const embedding = await embeddingService.generateEmbedding(message.content);
+  const embedStart = Date.now();
+  // Generate embedding for the message
+  const embedding = await embeddingService.generateEmbedding(message.content);
+  const embedLatency = Date.now() - embedStart;
 
       // Generate UUID for the point ID (Qdrant requirement)
       const pointId = this.generateUUID();
@@ -132,11 +134,15 @@ class VectorDatabaseService {
       };
 
       // Upsert point (insert or update)
+      const upsertStart = Date.now();
       await this.client.upsert(this.collectionName, {
         points: [point]
       });
+      const upsertLatency = Date.now() - upsertStart;
 
       console.log(`✅ Indexed message: ${message._id} (Point ID: ${pointId})`);
+      console.log(`   embedding_time_ms=${embedLatency} upsert_time_ms=${upsertLatency} userId=${point.payload.userId}`);
+
       return pointId; // Return the point ID for potential future use
     } catch (error) {
       console.error(`❌ Failed to index message ${message._id}:`, error.message);

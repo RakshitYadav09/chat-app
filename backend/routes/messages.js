@@ -37,6 +37,7 @@ function getScoreDescription(score) {
 // Send a message
 router.post('/', async (req, res) => {
   try {
+  const startTime = Date.now();
     const { senderId, receiverId, message } = req.body;
     
     if (!senderId || !receiverId || !message) {
@@ -72,7 +73,7 @@ router.post('/', async (req, res) => {
     await newMessage.populate('senderId', 'name email');
     await newMessage.populate('receiverId', 'name email');
 
-    // QDRANT STORAGE: index new message asynchronously
+    // QDRANT STORAGE: index new message asynchronously and log indexing latency
     if (vectorDatabase && vectorDatabase.isEnabled) {
       vectorDatabase.indexMessage({
         _id: newMessage._id,
@@ -81,7 +82,12 @@ router.post('/', async (req, res) => {
         timestamp: newMessage.createdAt,
         senderId: newMessage.senderId,
         receiverId: newMessage.receiverId
-      }).catch(err => console.warn('⚠️ Failed to index message in vector DB:', err.message));
+      })
+      .then(pointId => {
+        const indexLatency = Date.now() - startTime;
+        console.log(`📤 Index latency for message ${newMessage._id}: ${indexLatency}ms (pointId=${pointId})`);
+      })
+      .catch(err => console.warn('⚠️ Failed to index message in vector DB:', err.message));
     }
 
     res.status(201).json({ 
@@ -93,6 +99,9 @@ router.post('/', async (req, res) => {
         embeddingDimensions: embedding ? embedding.length : 0
       }
     });
+  // Log total processing time for message send (including DB save)
+  const totalTime = Date.now() - startTime;
+  console.log(`⏱️ Message processing time for ${newMessage._id}: ${totalTime}ms`);
   } catch (error) {
     console.error('Error sending message:', error);
     res.status(500).json({ 
