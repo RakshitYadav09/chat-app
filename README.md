@@ -1,6 +1,11 @@
+<<<<<<< HEAD
 # Enhanced Chat Application with Smart Search
 
 A modern chat application featuring AI-powered semantic search, real-time messaging, and scalable vector database integration.
+=======
+Chat App with Semantic Search
+---
+>>>>>>> 6c782e8c884325b14c3787aeb7440544d2b5821b
 
 ## 🚀 Features
 
