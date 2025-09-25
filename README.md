@@ -1,4 +1,4 @@
-# faff Chat App — My Engineering Assignment
+Chat App with Semantic Search
 ---
 
 ## 🚀 Features
